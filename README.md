@@ -8,12 +8,18 @@ MotionBlurPass is same as that of PPSv2.
 ![image](https://user-images.githubusercontent.com/24952685/75114171-39eb6500-5697-11ea-83a7-1991033c0f74.png)
 
 ## How to use
-- Import PostProcessingStackV2 package. This sample project use the MotionBlur.shader of PPSv2.
+To set for your project
+- Add only 3 files anywhere.
+    - fMotionBlur.cs
+    - fMotionFeature.cs
+    - fMotionVector.shader
+- Import PostProcessingStackV2 package. This sample project use the MotionBlur.shader of PPSv2.  
+![image](https://user-images.githubusercontent.com/24952685/75114679-8f297580-569b-11ea-8bda-67670c9ef50f.png)
 - Add ScriptableRendererFeature(fMotion Feature) to FowardRendererData.
 - Add VolumeComponent(fMotion Blur) to PostProcessVolume.
 ![image](https://user-images.githubusercontent.com/24952685/75114194-656e4f80-5697-11ea-903e-a559c86da5a5.png)
 
-## Known issue
+## Known issue (I won't fix. Please wait for official supporting.)
 - If ScriptableRendererFeature is missing when this project was reimported, please close the project and reopen.
 - Run MotionVectorPass to renderers that is stopping. These are skipped in Legacy RP.
 
