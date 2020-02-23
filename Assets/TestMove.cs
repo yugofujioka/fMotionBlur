@@ -7,7 +7,8 @@ public class TestMove : MonoBehaviour {
     // Start is called before the first frame update
     void Start() {
 #if UNITY_EDITOR
-        Application.targetFrameRate = 120;
+		QualitySettings.vSyncCount = 0;
+		Application.targetFrameRate = 60;
 #endif
         origin = this.transform.localPosition;
     }
