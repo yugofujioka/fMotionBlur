@@ -1,4 +1,4 @@
-﻿// Unity built-in shader source. Copyright (c) 2016 Unity Technologies. MIT license (see license.txt)
+﻿// Unity built-in shader source. Copyright (c) 2016 Unity Technologies. MIT license
 
 Shader "Hidden/MotionVectors" {
     SubShader {
@@ -81,7 +81,7 @@ Shader "Hidden/MotionVectors" {
 #endif
             float2 uvDiff = vPos - vPosOld;
             uvDiff *= 0.5;
-            // NOTE: Legacyと逆、ForceNoMotion時に0
+            // NOTE: unity_MotionVectorsParams.y is opposite of Legacy RP. 0 at ForceNoMotion.
             return lerp(0, float4(uvDiff, 0, 1), unity_MotionVectorsParams.y);
         }
 
@@ -151,7 +151,7 @@ Shader "Hidden/MotionVectors" {
         CamMotionVectors VertMotionVectorsCamera(CamMotionVectorsInput v) {
             CamMotionVectors o;
             UNITY_SETUP_INSTANCE_ID(v);
-            //UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
+            //UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o); // not support VR
             o.pos = mul(unity_MatrixVP, mul(unity_ObjectToWorld, float4(v.vertex.xyz, 1.0)));
 
 #ifdef UNITY_HALF_TEXEL_OFFSET
@@ -196,7 +196,6 @@ Shader "Hidden/MotionVectors" {
         //    Tags{ "LightMode" = "MotionVectors" }
 
         //    Cull Off
-        //    //ZClip [_ZClip]
         //    ZTest Always
         //    ZWrite Off
 
@@ -210,9 +209,8 @@ Shader "Hidden/MotionVectors" {
         Pass {
             Name "Camera Motion Vectors"
 
-            ZTest Always
-            //ZClip [_ZClip]
             Cull Off
+			ZTest Always
             ZWrite On
 
             HLSLPROGRAM
