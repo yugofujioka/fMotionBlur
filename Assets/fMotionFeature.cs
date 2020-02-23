@@ -30,6 +30,9 @@ public class fMotionFeature : ScriptableRendererFeature {
 
 
     #region Motion Vector
+	/// <summary>
+	/// Motion Vector Process
+	/// </summary>
     class MotionVectorPass : ScriptableRenderPass {
         private const string PASS_NAME = "fMotionVector";
         private const string PRE_PASS_NAME = "Copy Depth";
@@ -53,17 +56,13 @@ public class fMotionFeature : ScriptableRendererFeature {
 
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData) {
 #if UNITY_EDITOR || DEBUG
-            // 非実行時とシーンカメラに対してポスト処理をしない
             if (renderingData.cameraData.isSceneViewCamera || !Application.isPlaying)
                 return;
-            // プレビュー画面に対してポスト処理をしない
             if (renderingData.cameraData.camera.cameraType == CameraType.Preview)
                 return;
-
             if (this.blitMaterial == null)
                 return;
 #endif
-            // NOTE: 既存のVolumeと挙動を合わせる
             var volumeComponent = VolumeManager.instance.stack.GetComponent<fMotionBlur>();
             if (!volumeComponent.IsActive())
                 return;
@@ -72,44 +71,43 @@ public class fMotionFeature : ScriptableRendererFeature {
 
             using (new ProfilingScope(cmd, profilingSampler)) {
 #if UNITY_EDITOR || DEBUG
-                // FrameDebuggerの整理用
+                // for FrameDebugger
                 context.ExecuteCommandBuffer(cmd);
 #endif
                 cmd.Clear();
 
                 var camera = renderingData.cameraData.camera;
-                // NOTE: UnityEngineにunity_PreviousMを更新してもらうために必要
+                // NOTE: UnityEngine require this flags to update unity_PreviousM.
                 camera.depthTextureMode |= DepthTextureMode.MotionVectors | DepthTextureMode.Depth;
 
-                // Depthバッファのコピー
-                // NOTE: CameraDepthAttachmentとはフォーマットが違うのでCopyTextureは不可
 #if UNITY_EDITOR || DEBUG
+				// for FrameDebugger
                 CommandBuffer preCmd = CommandBufferPool.Get(PRE_PASS_NAME);
                 preCmd.Clear();
 #else
                 var preCmd = cmd;
 #endif
                 var descriptor = renderingData.cameraData.cameraTargetDescriptor;
-                // 今回のバッファをとって描画バッファに設定
+                // Create MotionVectorTexture
+				// NOTE : Depth Buffer is faster 32bit(24bit) than 16bit. https://gpuopen.com/dcc-overview/
                 preCmd.GetTemporaryRT(MOTION_TEXTURE, descriptor.width, descriptor.height, 32, FilterMode.Point, RenderTextureFormat.RGHalf);
-                // デプスバッファをコピー
                 this.Blit(preCmd, BuiltinRenderTextureType.None, MOTION_TEXTURE, this.blitMaterial, 1);
                 context.ExecuteCommandBuffer(preCmd);
 #if UNITY_EDITOR || DEBUG
+				// for FrameDebugger
                 CommandBufferPool.Release(preCmd);
 #endif
 
-                // カメラの移動差分を設定
-                // NOTE: GL.GetGPUProjectionMatrixで左/右手座標系を補正
-                var proj = GL.GetGPUProjectionMatrix(camera.nonJitteredProjectionMatrix, true);
+                // Camara Motion
+                //var proj = GL.GetGPUProjectionMatrix(camera.nonJitteredProjectionMatrix, true); // if you want to use previousViewProjectionMatrix
+				var proj = camera.nonJitteredProjectionMatrix;
                 var view = camera.worldToCameraMatrix;
                 var viewProj = proj * view;
                 this.blitMaterial.SetMatrix(PROP_VPMATRIX, viewProj);
-                // NOTE: camera.previousViewProjectionMatrixだとカメラが動かない場合に更新されない
+                // NOTE: camera.previousViewProjectionMatrix doesn't be updated when camera don't move.
                 this.blitMaterial.SetMatrix(PROP_PREV_VPMATRIX, this.previousVP);
                 this.previousVP = viewProj;
 
-                // VectorMap生成
                 var drawingSettings = this.CreateDrawingSettings(SHADER_TAG_FORWARD, ref renderingData, SortingCriteria.CommonOpaque);
                 drawingSettings.overrideMaterial = this.blitMaterial;
                 drawingSettings.overrideMaterialPassIndex = 0;
@@ -117,12 +115,12 @@ public class fMotionFeature : ScriptableRendererFeature {
                 var filteringSettings = new FilteringSettings(RenderQueueRange.opaque, this.settings.LayerMask);
                 var renderStateBlock = new RenderStateBlock(RenderStateMask.Nothing);
                 context.DrawRenderers(renderingData.cullResults, ref drawingSettings, ref filteringSettings, ref renderStateBlock);
-
-                // 描画バッファを元に戻す
-                cmd.SetRenderTarget(this.colorAttachment, this.depthAttachment);
             }
-
+			
+#if UNITY_EDITOR || DEBUG
+            // for FrameDebugger
             context.ExecuteCommandBuffer(cmd);
+#endif
             CommandBufferPool.Release(cmd);
         }
     }
@@ -131,9 +129,10 @@ public class fMotionFeature : ScriptableRendererFeature {
 
     #region Motion Blur
     /// <summary>
-    /// モーションブラーポスト処理
-    /// NOTE: PPSv2のMotionBlurを移植
-    /// NOTE: 本来はPostProcessPassでやるべきだが自作のForwardRendererの準備が必要になるので今回はFeatureにする
+    /// Motion Blur Process
+    /// NOTE: compatible MotionBlur(PPSv2)
+    /// NOTE: You should do it with PostProcessPass, but you need to prepare your own ScriptableRenderer...
+	///       So this is made as a ScriptableRendererFeature.
     /// </summary>
     class MotionBlurPass : ScriptableRenderPass {
         private const string PASS_NAME = "fMotionBlur";
@@ -190,10 +189,8 @@ public class fMotionFeature : ScriptableRendererFeature {
 
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData) {
 #if UNITY_EDITOR || DEBUG
-            // 非実行時とシーンカメラに対してポスト処理をしない
             if (renderingData.cameraData.isSceneViewCamera || !Application.isPlaying)
                 return;
-            // プレビュー画面に対してポスト処理をしない
             if (renderingData.cameraData.camera.cameraType == CameraType.Preview)
                 return;
             if (this.blitMaterial == null)
@@ -202,13 +199,14 @@ public class fMotionFeature : ScriptableRendererFeature {
             //    return;
 #endif
             var volumeComponent = VolumeManager.instance.stack.GetComponent<fMotionBlur>();
-            // 初回フレーム対応
             if (this.resetHistory) {
                 this.resetHistory = false;
                 return;
             }
-            if (!volumeComponent.IsActive())
-                return;
+			if (!volumeComponent.IsActive()) {
+				this.resetHistory = true;
+				return;
+			}
 
             CommandBuffer cmd = CommandBufferPool.Get(PASS_NAME);
 
@@ -228,6 +226,9 @@ public class fMotionFeature : ScriptableRendererFeature {
 
                 float shutterAngle = volumeComponent.shutterAngle.value;
                 int sampleCount = volumeComponent.sampleCount.value;
+
+				//------------------------------------------------------------
+				// compatible PPSv2
 
                 const float kMaxBlurRadius = 5f;
                 var vectorRTFormat = RenderTextureFormat.RGHalf;
@@ -306,20 +307,24 @@ public class fMotionFeature : ScriptableRendererFeature {
                 cmd.ReleaseTemporaryRT(neighborMax);
 
                 cmd.ReleaseTemporaryRT(TEMP_COLOR_TEXTURE);
-                cmd.ReleaseTemporaryRT(MOTION_TEXTURE); // MotionVectorで作った一時バッファをクリアする
+				//------------------------------------------------------------
+
+                cmd.ReleaseTemporaryRT(MOTION_TEXTURE); // Release MotionVectorTexture created in MotionVectorPass
+                cmd.SetRenderTarget(this.colorAttachment, this.depthAttachment);
             }
 
             context.ExecuteCommandBuffer(cmd);
             CommandBufferPool.Release(cmd);
         }
 
-        private void BlitFullscreenTriangle(CommandBuffer cmd, RenderTargetIdentifier source, RenderTargetIdentifier destination, int pass, bool clear = false) {
+        private void BlitFullscreenTriangle(CommandBuffer cmd, RenderTargetIdentifier source, RenderTargetIdentifier destination, int pass/*, bool clear = false*/) {
             cmd.SetGlobalTexture(MAIN_TEX, source);
-            RenderBufferLoadAction loadAction = clear ? RenderBufferLoadAction.Clear : RenderBufferLoadAction.DontCare;
+            //RenderBufferLoadAction loadAction = clear ? RenderBufferLoadAction.Clear : RenderBufferLoadAction.DontCare;
+			RenderBufferLoadAction loadAction = RenderBufferLoadAction.DontCare;
             cmd.SetRenderTarget(destination, loadAction, RenderBufferStoreAction.Store);
 
-            if (clear)
-                cmd.ClearRenderTarget(true, true, Color.clear);
+            //if (clear)
+            //    cmd.ClearRenderTarget(true, true, Color.clear);
 
             cmd.DrawMesh(this.triangle, Matrix4x4.identity, this.blitMaterial, 0, pass);
         }
@@ -336,8 +341,8 @@ public class fMotionFeature : ScriptableRendererFeature {
         if (this.settings.motionBlur.shader == null)
             this.settings.motionBlur.shader = Shader.Find("Hidden/PostProcessing/MotionBlur");
 
-        SupportedRenderingFeatures.active.motionVectors = true; // NOTE: Enable MotionVector setting for Renderer on Inspector
-        UniversalRenderPipeline.asset.supportsCameraDepthTexture = true; // NOTE: Enable DepthTexture
+        SupportedRenderingFeatures.active.motionVectors = true;				// NOTE: Enable MotionVector setting for Renderer on Inspector
+        UniversalRenderPipeline.asset.supportsCameraDepthTexture = true;	// NOTE: Require DepthTexture
 #endif
 
         this.motionVectorPass = new MotionVectorPass(this.settings.motionVector);

@@ -21,7 +21,7 @@ namespace UnityEngine.Rendering.Universal {
         /// Is the component active?
         /// </summary>
         /// <returns>True is the component is active</returns>
-        public bool IsActive() => shutterAngle.value > 0f;
+        public bool IsActive() => shutterAngle.value > 0f && this.active;
 
         /// <summary>
         /// Is the component compatible with on tile rendering
